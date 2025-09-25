@@ -1,3 +1,4 @@
+// routes/recordRoutes.js
 import express from "express";
 import {
   createRecord,
@@ -6,7 +7,8 @@ import {
   updateRecord,
   deleteRecord,
   getAllRecordsForAdmin,
-  getRecordStats,
+  getAdminDashboardStats,
+  getRecentRecords,
   verifyRecords,
 } from "../controller/recordController.js";
 import { isAuthenticated, isAuthorized } from "../middlewares/authMiddleware.js";
@@ -30,12 +32,31 @@ router.put("/update/:id", isAuthenticated, isAuthorized("Admin"), updateRecord);
 // Delete record (Admin only)
 router.delete("/delete/:id", isAuthenticated, isAuthorized("Admin"), deleteRecord);
 
-// Admin-only
+// Admin-only: Get all records
 router.get("/admin", isAuthenticated, isAuthorized("Admin"), getAllRecordsForAdmin);
 
-// routes/recordRoutes.js
-router.get("/stats", isAuthenticated, isAuthorized("Admin"), getRecordStats);
+// Admin-only: Dashboard stats (totals, weekly, monthly)
+router.get(
+  "/dashboard-stats",
+  isAuthenticated,
+  isAuthorized("Admin"),
+  getAdminDashboardStats
+);
 
+// Admin-only: Recent records for table
+router.get(
+  "/recent",
+  isAuthenticated,
+  isAuthorized("Admin"),
+  getRecentRecords
+);
 
+// Admin-only: Verify / Publish records
+router.post(
+  "/verify",
+  isAuthenticated,
+  isAuthorized("Admin"),
+  verifyRecords
+);
 
 export default router;
