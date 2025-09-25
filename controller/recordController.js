@@ -10,83 +10,98 @@ import { sendEmail } from "../utils/sendMail.js";
  * ==============================
  */
 export const createRecord = async (req, res) => {
-  try {
-    const {
-      courtStation,
-      causeNo,
-      nameOfDeceased,
-      dateReceived,
-      dateOfReceipt,
-      leadTime,
-      form60Compliance = "Approved",
-      rejectionReason = "",
-      statusAtGP = "Pending",
-      volumeNo = "",
-      datePublished,
-      dateForwardedToGP,
-    } = req.body;
+  const {
+    courtStation,
+    causeNo,
+    nameOfDeceased,
+    dateReceived,
+    dateOfReceipt,
+    leadTime,
+    form60Compliance = "Approved",
+    rejectionReason = "",
+    statusAtGP = "Pending",
+    volumeNo = "",
+    datePublished,
+    dateForwardedToGP,
+  } = req.body;
 
-    // Validate court
-    const court = await Court.findById(courtStation);
-    if (!court) {
-      return res.status(400).json({ message: "Invalid courtStation ID" });
+  try {
+    // 1️⃣ Validate required fields
+    if (!courtStation || !causeNo || !nameOfDeceased || !dateReceived) {
+      return res.status(400).json({ success: false, message: "Missing required fields" });
     }
 
-    // Auto-increment `no`
-    const lastRecord = await Record.findOne().sort({ no: -1 });
+    // 2️⃣ Validate court exists
+    const court = await Court.findById(courtStation).lean();
+    if (!court) {
+      return res.status(400).json({ success: false, message: "Invalid courtStation ID" });
+    }
+
+    // 3️⃣ Get next auto-increment number
+    const lastRecord = await Record.findOne({}, { no: 1 }).sort({ no: -1 }).lean();
     const newNo = lastRecord ? lastRecord.no + 1 : 1;
 
-    // Create record
-    const newRecord = await Record.create({
-      no: newNo,
-      courtStation,
-      causeNo,
-      nameOfDeceased,
-      dateReceived,
-      dateOfReceipt,
-      leadTime,
-      form60Compliance,
-      rejectionReason,
-      statusAtGP,
-      volumeNo,
-      datePublished,
-      dateForwardedToGP,
-    });
+    // 4️⃣ Prepare new record
+    const recordData = {
+  no: newNo,
+  courtStation,
+  causeNo,
+  nameOfDeceased,
+  dateReceived,
+  leadTime,
+  form60Compliance,
+  rejectionReason,
+  statusAtGP,
+  volumeNo,
+  datePublished,
+  dateForwardedToGP,
+};
 
-    // Email notification
-    const reasonText = rejectionReason?.trim() || "No reason provided";
-    const text =
-      form60Compliance === "Approved"
-        ? `The record for ${nameOfDeceased} (Cause No. ${causeNo}) has been approved.`
-        : `The record for ${nameOfDeceased} (Cause No. ${causeNo}) has been rejected. Reason: ${reasonText}`;
+// ✅ Only add dateOfReceipt if provided
+if (dateOfReceipt) {
+  recordData.dateOfReceipt = dateOfReceipt;
+}
+    // 5️⃣ Save record
+    const newRecord = await Record.create(recordData);
 
-    const html = judicialEmailTemplate({
-      form60Compliance,
-      nameOfDeceased,
-      causeNo,
-      courtName: court.name,
-      reason: reasonText,
-      dateForwardedToGP,
-    });
+    // 6️⃣ Send email asynchronously (don't block response)
+    (async () => {
+      try {
+        const reasonText = rejectionReason?.trim() || "No reason provided";
+        const text =
+          form60Compliance === "Approved"
+            ? `The record for ${nameOfDeceased} (Cause No. ${causeNo}) has been approved.`
+            : `The record for ${nameOfDeceased} (Cause No. ${causeNo}) has been rejected. Reason: ${reasonText}`;
 
-    try {
-      await sendEmail({
-        to: court.primaryEmail,
-        cc: court.secondaryEmails,
-        subject:
-          form60Compliance === "Approved" ? "Document Approved" : "Document Rejected",
-        message: text,
-        html,
-      });
-    } catch (err) {
-      console.error("Email sending failed:", err.message);
-    }
+        const html = judicialEmailTemplate({
+          form60Compliance,
+          nameOfDeceased,
+          causeNo,
+          courtName: court.name,
+          reason: reasonText,
+          dateForwardedToGP,
+        });
 
+        await sendEmail({
+          to: court.primaryEmail,
+          cc: court.secondaryEmails,
+          subject: form60Compliance === "Approved" ? "Document Approved" : "Document Rejected",
+          message: text,
+          html,
+        });
+      } catch (err) {
+        console.error("Email sending failed:", err.message);
+      }
+    })();
+
+    // 7️⃣ Respond immediately
     res.status(201).json({ success: true, data: newRecord });
   } catch (error) {
+    console.error("Create record error:", error);
     res.status(500).json({ success: false, message: "Server error", error: error.message });
   }
 };
+
 
 
 /**
@@ -97,103 +112,46 @@ export const createRecord = async (req, res) => {
 export const updateRecord = async (req, res) => {
   try {
     const { id } = req.params;
-    const {
-      courtStation,
-      form60Compliance,
-      rejectionReason,
-      dateReceived,
-      dateOfReceipt,
-      statusAtGP,
-      volumeNo,
-      datePublished,
-      dateForwardedToGP,
-      ...rest
-    } = req.body;
 
-    // Validate courtStation if changed
-    let court;
-    if (courtStation) {
-      court = await Court.findById(courtStation);
-      if (!court) return res.status(400).json({ message: "Invalid courtStation ID" });
-    }
-
-    // Recalculate lead time
-    let leadTime;
-    if (dateReceived && dateOfReceipt) {
-      leadTime = Math.abs(
-        Math.ceil(
-          (new Date(dateOfReceipt) - new Date(dateReceived)) / (1000 * 60 * 60 * 24)
-        )
-      );
-    }
-
-    // Update record
-    const updatedRecord = await Record.findByIdAndUpdate(
-      id,
-      {
-        ...rest,
-        courtStation,
-        form60Compliance,
-        rejectionReason: form60Compliance === "Rejected" ? rejectionReason : "",
-        dateReceived,
-        dateOfReceipt,
-        leadTime,
-        statusAtGP,
-        volumeNo,
-        datePublished,
-        dateForwardedToGP,
-      },
-      { new: true, runValidators: true }
-    ).populate("courtStation", "name level primaryEmail secondaryEmails");
-
-    if (!updatedRecord) return res.status(404).json({ message: "Record not found" });
-
-    // Send email notification
-    const targetCourt = court || updatedRecord.courtStation;
-    const reasonText = rejectionReason?.trim() || "No reason provided";
-
-    const text =
-      form60Compliance === "Approved"
-        ? `The record for ${updatedRecord.nameOfDeceased} (Cause No. ${updatedRecord.causeNo}) has been approved.`
-        : `The record for ${updatedRecord.nameOfDeceased} (Cause No. ${updatedRecord.causeNo}) has been rejected. Reason: ${reasonText}`;
-
-    const html = judicialEmailTemplate({
-      form60Compliance,
-      nameOfDeceased: updatedRecord.nameOfDeceased,
-      causeNo: updatedRecord.causeNo,
-      courtName: targetCourt.name,
-      reason: reasonText,
-      dateForwardedToGP: updatedRecord.dateForwardedToGP,
-    });
-
-    try {
-      await sendEmail({
-        to: targetCourt.primaryEmail,
-        cc: targetCourt.secondaryEmails,
-        subject:
-          form60Compliance === "Approved"
-            ? "Document Approved (Update)"
-            : "Document Rejected (Update)",
-        message: text,
-        html,
+    // ✅ Validate ObjectId
+    if (!mongoose.isValidObjectId(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "❌ Invalid record ID",
       });
-    } catch (err) {
-      console.error("Email sending failed:", err.message);
     }
 
-    res.status(200).json({
+    // ✅ Log body (to debug missing fields)
+    console.log("Update payload:", req.body);
+
+    // ✅ Perform update
+    const updatedRecord = await Record.findByIdAndUpdate(id, req.body, {
+      new: true, // return updated document
+      runValidators: true, // enforce schema validation
+    }).populate("courtStation", "name level");
+
+    if (!updatedRecord) {
+      return res.status(404).json({
+        success: false,
+        message: "❌ Record not found",
+      });
+    }
+
+    return res.status(200).json({
       success: true,
-      message: "Record updated successfully",
-      data: updatedRecord,
+      message: "✅ Record updated successfully",
+      record: updatedRecord,
     });
   } catch (error) {
+    console.error("Update record error:", error.message);
     res.status(500).json({
       success: false,
-      message: "Failed to update record",
+      message: "❌ Failed to update record",
       error: error.message,
     });
   }
 };
+
 
 /**
  * ==============================
@@ -202,7 +160,7 @@ export const updateRecord = async (req, res) => {
  */
 export const getRecords = async (req, res) => {
   try {
-    const { page = 1, limit = 20, search = "" } = req.query;
+    const { page = 1, limit = 30, search = "" } = req.query; // 👈 default limit is 30
 
     const query = search
       ? {
@@ -236,6 +194,7 @@ export const getRecords = async (req, res) => {
     });
   }
 };
+
 
 /**
  * ==============================
@@ -274,23 +233,41 @@ export const deleteRecord = async (req, res) => {
  */
 export const getAllRecordsForAdmin = async (req, res) => {
   try {
+    let { page = 1, limit = 30 } = req.query; // default 30 per page
+
+    page = Number(page);
+    limit = Number(limit);
+
+    if (page < 1) page = 1;
+    if (limit < 1) limit = 30;
+
     const records = await Record.find()
       .populate("courtStation", "name level")
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit);
+
+    const totalRecords = await Record.countDocuments();
 
     res.status(200).json({
       success: true,
-      totalRecords: records.length,
+      message: "✅ Records fetched successfully",
+      totalRecords,
+      currentPage: page,
+      totalPages: Math.ceil(totalRecords / limit),
+      pageSize: limit,
       records,
     });
   } catch (error) {
+    console.error("❌ getAllRecordsForAdmin error:", error.message);
     res.status(500).json({
       success: false,
-      message: "❌ Failed to fetch all records",
+      message: "❌ Failed to fetch records for admin",
       error: error.message,
     });
   }
 };
+
 
 /**
  * ==============================

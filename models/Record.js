@@ -31,7 +31,9 @@ const recordSchema = new mongoose.Schema(
     },
 
     dateOfReceipt: { 
-      type: Date 
+      type: Date,
+      required: false,
+      default: null
     },
 
     leadTime: { 
