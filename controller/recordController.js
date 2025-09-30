@@ -226,28 +226,53 @@ export const deleteRecord = async (req, res) => {
   }
 };
 
-/**
- * ==============================
- * GET ALL RECORDS (Admin Only)
- * ==============================
- */
 export const getAllRecordsForAdmin = async (req, res) => {
   try {
-    let { page = 1, limit = 30 } = req.query; // default 30 per page
+    let { page = 1, limit = 30, search = "", court = "All", status = "All" } = req.query;
 
-    page = Number(page);
-    limit = Number(limit);
+    page = Math.max(Number(page), 1);
+    limit = Math.max(Number(limit), 1);
 
-    if (page < 1) page = 1;
-    if (limit < 1) limit = 30;
+    const query = {};
 
-    const records = await Record.find()
+    // Status filter
+    if (status !== "All") {
+      query.form60Compliance = status;
+    }
+
+    // Court filter
+    if (court !== "All" && mongoose.Types.ObjectId.isValid(court)) {
+      query.courtStation = new mongoose.Types.ObjectId(court);
+    }
+
+    // Search filter
+    if (search && search.trim() !== "") {
+      const term = search.trim();
+
+      // Find courts matching by name
+      const matchedCourts = await Court.find(
+        { name: { $regex: term, $options: "i" } },
+        { _id: 1 }
+      ).lean();
+
+      const courtIds = matchedCourts.map((c) => c._id);
+
+      query.$or = [
+        { nameOfDeceased: { $regex: term, $options: "i" } },
+        { causeNo: { $regex: term, $options: "i" } },
+        ...(courtIds.length > 0 ? [{ courtStation: { $in: courtIds } }] : []),
+      ];
+    }
+
+    console.log("Final Query:", JSON.stringify(query, null, 2));
+
+    const records = await Record.find(query)
       .populate("courtStation", "name level")
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit);
 
-    const totalRecords = await Record.countDocuments();
+    const totalRecords = await Record.countDocuments(query);
 
     res.status(200).json({
       success: true,
@@ -267,6 +292,7 @@ export const getAllRecordsForAdmin = async (req, res) => {
     });
   }
 };
+
 
 
 /**
@@ -363,13 +389,14 @@ export const getAdminDashboardStats = async (req, res) => {
       .reverse();
 
     res.status(200).json({
-      success: true,
-      totalRecords,
-      approved,
-      pending: rejected,
-      weekly: weeklyFormatted,
-      monthly: monthlyFormatted,
-    });
+  success: true,
+  totalRecords,
+  approved,
+  rejected, // keep rejected instead of renaming to pending
+  weekly: weeklyFormatted,
+  monthly: monthlyFormatted,
+});
+
   } catch (error) {
     res.status(500).json({
       success: false,

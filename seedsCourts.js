@@ -1883,7 +1883,28 @@ const courts = [
   secondaryEmails: ["dorcas.maiteri@court.go.ke"],
   code: "52219",
   location: ""
-}
+},
+
+{
+  name: "MAKUENI LAW COURTS",
+  level: "Law Courts",
+  magistrate: "",
+  phone: "0722801555",
+  primaryEmail: "makuenicourt@court.go.ke",
+  secondaryEmails: ["pgesora@court.go.ke"],
+  code: "43067",
+  location: ""
+},
+{
+  name: "KIGUMO LAW COURTS",
+  level: "Law Courts",
+  magistrate: "Hon. Joan Irura",
+  phone: "0723286958",
+  primaryEmail: "kigumocourt@court.go.ke",
+  secondaryEmails: ["jirure@court.go.ke"],
+  code: "49850",
+  location: ""
+},
 
   
 
@@ -1896,9 +1917,18 @@ const seedCourts = async () => {
 
     console.log("🌍 Connected to PRF60");
 
-    await Court.insertMany(courts, { ordered: false });
+    const operations = courts.map((court) => ({
+      updateOne: {
+        filter: { name: court.name }, // use the unique field
+        update: { $set: court },
+        upsert: true,
+      },
+    }));
 
-    console.log(`🌟 ${courts.length} courts seeded successfully`);
+    const result = await Court.bulkWrite(operations);
+
+    console.log("🌟 Courts seeded successfully");
+    console.log(`👉 Inserted: ${result.upsertedCount}, Updated: ${result.modifiedCount}`);
 
     await mongoose.disconnect();
     process.exit(0);
@@ -1909,3 +1939,4 @@ const seedCourts = async () => {
 };
 
 seedCourts();
+
