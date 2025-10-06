@@ -1,4 +1,3 @@
-// routes/recordRoutes.js
 import express from "express";
 import {
   createRecord,
@@ -10,6 +9,7 @@ import {
   getAdminDashboardStats,
   getRecentRecords,
   verifyRecords,
+  bulkUpdateDateForwarded,
 } from "../controller/recordController.js";
 import { isAuthenticated, isAuthorized } from "../middlewares/authMiddleware.js";
 
@@ -20,10 +20,10 @@ const router = express.Router();
 // Create a record (Admin only)
 router.post("/create", isAuthenticated, isAuthorized("Admin"), createRecord);
 
-// Get all records (Public) with pagination, filtering, search
+// Get all records (User)
 router.get("/user-records", getRecords);
 
-// Get single record by ID (Public)
+// Get single record by ID (User)
 router.get("/get/:id", getRecordById);
 
 // Update record (Admin only)
@@ -35,28 +35,16 @@ router.delete("/delete/:id", isAuthenticated, isAuthorized("Admin"), deleteRecor
 // Admin-only: Get all records
 router.get("/admin", isAuthenticated, isAuthorized("Admin"), getAllRecordsForAdmin);
 
-// Admin-only: Dashboard stats (totals, weekly, monthly)
-router.get(
-  "/dashboard-stats",
-  isAuthenticated,
-  isAuthorized("Admin"),
-  getAdminDashboardStats
-);
+// Admin-only: Dashboard stats
+router.get("/dashboard-stats", isAuthenticated, isAuthorized("Admin"), getAdminDashboardStats);
 
-// Admin-only: Recent records for table
-router.get(
-  "/recent",
-  isAuthenticated,
-  isAuthorized("Admin"),
-  getRecentRecords
-);
+// Admin-only: Recent records
+router.get("/recent", isAuthenticated, isAuthorized("Admin"), getRecentRecords);
 
 // Admin-only: Verify / Publish records
-router.post(
-  "/verify",
-  isAuthenticated,
-  isAuthorized("Admin"),
-  verifyRecords
-);
+router.post("/verify", isAuthenticated, isAuthorized("Admin"), verifyRecords);
+
+// Admin-only: Bulk update dateForwarded
+router.patch("/bulk-update-forwarded", isAuthenticated, isAuthorized("Admin"), bulkUpdateDateForwarded);
 
 export default router;
