@@ -218,20 +218,85 @@ export const getRecordById = async (req, res) => {
 export const bulkUpdateDateForwarded = async (req, res) => {
   try {
     const { ids, date } = req.body;
-    if (!ids || !Array.isArray(ids) || !date) return res.status(400).json({ success: false, message: "Missing ids or date" });
+
+    if (!ids || !Array.isArray(ids) || !date) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing ids or date",
+      });
+    }
 
     const validIds = ids.filter((id) => mongoose.Types.ObjectId.isValid(id));
-    if (validIds.length === 0) return res.status(400).json({ success: false, message: "No valid IDs provided" });
+    if (validIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "No valid IDs provided",
+      });
+    }
 
+    // Update records
     const result = await Record.updateMany(
       { _id: { $in: validIds } },
       { dateForwardedToGP: date }
     );
 
-    res.status(200).json({ success: true, message: "Records updated successfully", modifiedCount: result.modifiedCount });
+    // Fetch updated records to get recipient details
+    const updatedRecords = await Record.find({ _id: { $in: validIds } });
+
+    if (!updatedRecords.length) {
+      return res.status(404).json({
+        success: false,
+        message: "No records found for the provided IDs",
+      });
+    }
+
+    // Build email recipient list
+    const recipients = updatedRecords
+      .map((r) => r.email)
+      .filter(Boolean); // only valid emails
+
+    // ✅ Send email if there are recipients
+    if (recipients.length > 0) {
+      await sendEmail({
+        to: recipients[0], // first recipient or admin (you can adjust)
+        cc: recipients.slice(1), // others in CC
+        subject: "Record Forwarding Date Updated",
+        html: `
+          <h3>Bulk Date Update Notification</h3>
+          <p>Dear User,</p>
+          <p>The forwarding date for your record(s) has been updated to <strong>${date}</strong>.</p>
+          <p>Total records updated: <strong>${result.modifiedCount}</strong></p>
+          <p>Records affected:</p>
+          <ul>
+            ${updatedRecords
+              .map(
+                (r) => `<li>${r.caseNumber || r._id} — ${r.email || "N/A"}</li>`
+              )
+              .join("")}
+          </ul>
+          <br/>
+          <p>Regards,<br/>Court Records System</p>
+        `,
+      });
+
+      console.log("📧 Notification email sent to:", recipients.join(", "));
+    } else {
+      console.log("⚠️ No valid email addresses found for updated records");
+    }
+
+    res.status(200).json({
+      success: true,
+      message:
+        "Records updated successfully. Notification email sent (if recipients found).",
+      modifiedCount: result.modifiedCount,
+    });
   } catch (error) {
     console.error("Bulk update error:", error.message);
-    res.status(500).json({ success: false, message: "Failed to update records", error: error.message });
+    res.status(500).json({
+      success: false,
+      message: "Failed to update records or send email",
+      error: error.message,
+    });
   }
 };
 
