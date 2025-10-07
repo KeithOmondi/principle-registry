@@ -7,6 +7,7 @@ import { errorMiddleware } from "./middlewares/errorMiddlewares.js";
 import authRouter from "./routes/authRouter.js";
 import recordRouter from "./routes/recordRouter.js";
 import courtRouter from "./routes/courtRouter.js";
+import userRouter from "./routes/userRouter.js";
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -41,6 +42,7 @@ app.use((req, _res, next) => {
 app.use("/api/v1/auth", authRouter);
 app.use("/api/v1/records", recordRouter);
 app.use("/api/v1/courts", courtRouter);
+app.use("/api/v1/user", userRouter);
 
 // DB connection
 connectDB();
