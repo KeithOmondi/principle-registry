@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 
 const recordSchema = new mongoose.Schema(
   {
-    no: { type: Number, required: true, unique: true },
+    no: { type: Number, required: false, unique: true },
 
     courtStation: {
       type: mongoose.Schema.Types.ObjectId,
