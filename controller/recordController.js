@@ -287,7 +287,7 @@ export const bulkUpdateDateForwarded = async (req, res) => {
     res.status(200).json({
       success: true,
       message:
-        "Records updated successfully. Notification email sent (if recipients found).",
+        "Records updated successfully. Notification email sent.",
       modifiedCount: result.modifiedCount,
     });
   } catch (error) {
