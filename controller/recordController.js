@@ -3,6 +3,7 @@ import Court from "../models/Court.js";
 import Record from "../models/Record.js";
 import Counter from "../models/Counter.js";
 import { sendEmail } from "../utils/sendMail.js";
+import { User } from "../models/userModel.js";
 
 /**
  * ==============================
