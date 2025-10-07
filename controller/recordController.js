@@ -41,13 +41,23 @@ export const createRecord = async (req, res) => {
       dateForwardedToGP,
     } = req.body;
 
-    if (!courtStation || !causeNo || !nameOfDeceased || !dateReceived || !leadTime) {
-      return res.status(400).json({ success: false, message: "Missing required fields" });
+    if (
+      !courtStation ||
+      !causeNo ||
+      !nameOfDeceased ||
+      !dateReceived ||
+      !leadTime
+    ) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Missing required fields" });
     }
 
     const court = await Court.findById(courtStation).lean();
     if (!court) {
-      return res.status(400).json({ success: false, message: "Invalid courtStation ID" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid courtStation ID" });
     }
 
     const newNo = await getNextSequence("recordNo");
@@ -92,7 +102,10 @@ export const createRecord = async (req, res) => {
         await sendEmail({
           to: court.primaryEmail,
           cc: court.secondaryEmails,
-          subject: form60Compliance === "Approved" ? "Document Approved" : "Document Rejected",
+          subject:
+            form60Compliance === "Approved"
+              ? "Document Approved"
+              : "Document Rejected",
           message: text,
           html,
         });
@@ -104,7 +117,9 @@ export const createRecord = async (req, res) => {
     res.status(201).json({ success: true, data: newRecord });
   } catch (error) {
     console.error("Create record error:", error.message);
-    res.status(500).json({ success: false, message: "Server error", error: error.message });
+    res
+      .status(500)
+      .json({ success: false, message: "Server error", error: error.message });
   }
 };
 
@@ -116,19 +131,37 @@ export const createRecord = async (req, res) => {
 export const updateRecord = async (req, res) => {
   try {
     const { id } = req.params;
-    if (!mongoose.isValidObjectId(id)) return res.status(400).json({ success: false, message: "Invalid record ID" });
+    if (!mongoose.isValidObjectId(id))
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid record ID" });
 
     const updatedRecord = await Record.findByIdAndUpdate(id, req.body, {
       new: true,
       runValidators: true,
     }).populate("courtStation", "name level");
 
-    if (!updatedRecord) return res.status(404).json({ success: false, message: "Record not found" });
+    if (!updatedRecord)
+      return res
+        .status(404)
+        .json({ success: false, message: "Record not found" });
 
-    res.status(200).json({ success: true, message: "Record updated successfully", record: updatedRecord });
+    res
+      .status(200)
+      .json({
+        success: true,
+        message: "Record updated successfully",
+        record: updatedRecord,
+      });
   } catch (error) {
     console.error("Update record error:", error.message);
-    res.status(500).json({ success: false, message: "Failed to update record", error: error.message });
+    res
+      .status(500)
+      .json({
+        success: false,
+        message: "Failed to update record",
+        error: error.message,
+      });
   }
 };
 
@@ -140,15 +173,29 @@ export const updateRecord = async (req, res) => {
 export const deleteRecord = async (req, res) => {
   try {
     const { id } = req.params;
-    if (!mongoose.isValidObjectId(id)) return res.status(400).json({ success: false, message: "Invalid record ID" });
+    if (!mongoose.isValidObjectId(id))
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid record ID" });
 
     const deleted = await Record.findByIdAndDelete(id);
-    if (!deleted) return res.status(404).json({ success: false, message: "Record not found" });
+    if (!deleted)
+      return res
+        .status(404)
+        .json({ success: false, message: "Record not found" });
 
-    res.status(200).json({ success: true, message: "Record deleted successfully" });
+    res
+      .status(200)
+      .json({ success: true, message: "Record deleted successfully" });
   } catch (error) {
     console.error("Delete record error:", error.message);
-    res.status(500).json({ success: false, message: "Failed to delete record", error: error.message });
+    res
+      .status(500)
+      .json({
+        success: false,
+        message: "Failed to delete record",
+        error: error.message,
+      });
   }
 };
 
@@ -187,7 +234,13 @@ export const getRecords = async (req, res) => {
     });
   } catch (error) {
     console.error("Get records error:", error.message);
-    res.status(500).json({ success: false, message: "Failed to fetch records", error: error.message });
+    res
+      .status(500)
+      .json({
+        success: false,
+        message: "Failed to fetch records",
+        error: error.message,
+      });
   }
 };
 
@@ -199,15 +252,30 @@ export const getRecords = async (req, res) => {
 export const getRecordById = async (req, res) => {
   try {
     const { id } = req.params;
-    if (!mongoose.isValidObjectId(id)) return res.status(400).json({ success: false, message: "Invalid record ID" });
+    if (!mongoose.isValidObjectId(id))
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid record ID" });
 
-    const record = await Record.findById(id).populate("courtStation", "name level");
-    if (!record) return res.status(404).json({ success: false, message: "Record not found" });
+    const record = await Record.findById(id).populate(
+      "courtStation",
+      "name level"
+    );
+    if (!record)
+      return res
+        .status(404)
+        .json({ success: false, message: "Record not found" });
 
     res.status(200).json({ success: true, record });
   } catch (error) {
     console.error("Get record by ID error:", error.message);
-    res.status(500).json({ success: false, message: "Failed to fetch record", error: error.message });
+    res
+      .status(500)
+      .json({
+        success: false,
+        message: "Failed to fetch record",
+        error: error.message,
+      });
   }
 };
 
@@ -309,13 +377,17 @@ export const bulkUpdateDateForwarded = async (req, res) => {
           <div style="padding:20px;">
             <p>Dear Admin Team,</p>
             <p>
-              The forwarding date for <strong>${updatedRecords.length}</strong> record(s)
-              has been successfully updated to <strong>${date}</strong>.
-            </p>
+  The forwarding date for <strong>${updatedRecords.length}</strong> record(s)
+  has been successfully updated and marked as <strong>Forwarded to the Government Printer (G.P.)</strong> 
+  on <strong>${date}</strong>.
+</p>
+
 
             ${recordsTable}
 
-            <p style="margin-top:20px;">✅ Modified count: ${result.modifiedCount}</p>
+            <p style="margin-top:20px;">✅ Modified count: ${
+              result.modifiedCount
+            }</p>
 
             <p style="margin-top:24px;">
               Regards,<br/>
@@ -359,7 +431,9 @@ export const bulkUpdateDateForwarded = async (req, res) => {
                 </div>
                 <div style="padding:16px; border:1px solid #ddd; border-top:none;">
                   <p>Dear User,</p>
-                  <p>Your record <strong>${record.caseNumber || record._id}</strong> has been updated.</p>
+                  <p>Your record <strong>${
+                    record.caseNumber || record._id
+                  }</strong> has been updated.</p>
                   <p>New forwarding date: <strong>${date}</strong></p>
                   <p>Regards,<br/><strong>Principal Registry System</strong></p>
                 </div>
@@ -368,7 +442,10 @@ export const bulkUpdateDateForwarded = async (req, res) => {
           });
           console.log(`📨 User email sent: ${record.email}`);
         } catch (err) {
-          console.error(`❌ Failed to send email to ${record.email}:`, err.message);
+          console.error(
+            `❌ Failed to send email to ${record.email}:`,
+            err.message
+          );
         }
       }
     }
@@ -391,10 +468,6 @@ export const bulkUpdateDateForwarded = async (req, res) => {
   }
 };
 
-
-
-
-
 /**
  * ==============================
  * GET ADMIN DASHBOARD STATS
@@ -404,8 +477,12 @@ export const getAdminDashboardStats = async (req, res) => {
   try {
     // Total counts
     const totalRecords = await Record.countDocuments();
-    const approved = await Record.countDocuments({ form60Compliance: "Approved" });
-    const rejected = await Record.countDocuments({ form60Compliance: "Rejected" });
+    const approved = await Record.countDocuments({
+      form60Compliance: "Approved",
+    });
+    const rejected = await Record.countDocuments({
+      form60Compliance: "Rejected",
+    });
 
     // Weekly stats (last 6 weeks)
     const weekly = await Record.aggregate([
@@ -416,8 +493,12 @@ export const getAdminDashboardStats = async (req, res) => {
             year: { $year: "$dateReceived" },
           },
           total: { $sum: 1 },
-          approved: { $sum: { $cond: [{ $eq: ["$form60Compliance", "Approved"] }, 1, 0] } },
-          rejected: { $sum: { $cond: [{ $eq: ["$form60Compliance", "Rejected"] }, 1, 0] } },
+          approved: {
+            $sum: { $cond: [{ $eq: ["$form60Compliance", "Approved"] }, 1, 0] },
+          },
+          rejected: {
+            $sum: { $cond: [{ $eq: ["$form60Compliance", "Rejected"] }, 1, 0] },
+          },
         },
       },
       { $sort: { "_id.year": -1, "_id.week": -1 } },
@@ -433,8 +514,12 @@ export const getAdminDashboardStats = async (req, res) => {
             year: { $year: "$dateReceived" },
           },
           total: { $sum: 1 },
-          approved: { $sum: { $cond: [{ $eq: ["$form60Compliance", "Approved"] }, 1, 0] } },
-          rejected: { $sum: { $cond: [{ $eq: ["$form60Compliance", "Rejected"] }, 1, 0] } },
+          approved: {
+            $sum: { $cond: [{ $eq: ["$form60Compliance", "Approved"] }, 1, 0] },
+          },
+          rejected: {
+            $sum: { $cond: [{ $eq: ["$form60Compliance", "Rejected"] }, 1, 0] },
+          },
         },
       },
       { $sort: { "_id.year": -1, "_id.month": -1 } },
@@ -486,7 +571,13 @@ export const getAdminDashboardStats = async (req, res) => {
  */
 export const getAllRecordsForAdmin = async (req, res) => {
   try {
-    let { page = 1, limit = 30, search = "", court = "All", status = "All" } = req.query;
+    let {
+      page = 1,
+      limit = 30,
+      search = "",
+      court = "All",
+      status = "All",
+    } = req.query;
 
     page = Math.max(Number(page), 1);
     limit = Math.max(Number(limit), 1);
@@ -619,14 +710,19 @@ export const verifyRecords = async (req, res) => {
   }
 };
 
-
-
 /**
  * ==============================
  * JUDICIAL EMAIL TEMPLATE
  * ==============================
  */
-function judicialEmailTemplate({ form60Compliance, nameOfDeceased, causeNo, courtName, reason, dateForwardedToGP }) {
+function judicialEmailTemplate({
+  form60Compliance,
+  nameOfDeceased,
+  causeNo,
+  courtName,
+  reason,
+  dateForwardedToGP,
+}) {
   return `
     <div style="font-family: Arial, sans-serif; background:#f9f9f9; padding:20px;">
       <div style="max-width:650px; margin:auto; background:#fff; border:1px solid #ddd; border-radius:8px; overflow:hidden;">
@@ -639,12 +735,22 @@ function judicialEmailTemplate({ form60Compliance, nameOfDeceased, causeNo, cour
           </div>
         </div>
         <div style="padding:20px; color:#000;">
-          <h3 style="color:${form60Compliance === "Approved" ? "#006400" : "#b22222"};">Record ${form60Compliance}</h3>
+          <h3 style="color:${
+            form60Compliance === "Approved" ? "#006400" : "#b22222"
+          };">Record ${form60Compliance}</h3>
           <p><b style="color:#006400;">Deceased:</b> ${nameOfDeceased}</p>
           <p><b style="color:#006400;">Cause No:</b> ${causeNo}</p>
           <p><b style="color:#006400;">Court:</b> ${courtName}</p>
-          ${form60Compliance === "Rejected" ? `<p><b style="color:#b22222;">Reason:</b> ${reason}</p>` : ""}
-          <p><b style="color:#006400;">Date Forwarded to GP:</b> ${dateForwardedToGP ? new Date(dateForwardedToGP).toLocaleDateString() : "N/A"}</p>
+          ${
+            form60Compliance === "Rejected"
+              ? `<p><b style="color:#b22222;">Reason:</b> ${reason}</p>`
+              : ""
+          }
+          <p><b style="color:#006400;">Date Forwarded to GP:</b> ${
+            dateForwardedToGP
+              ? new Date(dateForwardedToGP).toLocaleDateString()
+              : "N/A"
+          }</p>
         </div>
         <div style="background:#f1f1f1; color:#555; padding:12px; text-align:center; font-size:12px;">
           ⚖️ This is a system-generated email from the ORHC of Kenya.<br/>
