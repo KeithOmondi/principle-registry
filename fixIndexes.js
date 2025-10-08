@@ -1,4 +1,4 @@
-// server/fixIndexes.js
+// server/fixRecordIndexes.js
 import mongoose from "mongoose";
 
 const run = async () => {
@@ -9,13 +9,13 @@ const run = async () => {
     console.log("✅ Connected to DB");
 
     const db = mongoose.connection.db;
-    const collection = db.collection("courts"); // Updated collection name
+    const collection = db.collection("records");
 
     // 1. Show current indexes
     const indexes = await collection.indexes();
     console.log("📌 Current Indexes:", indexes);
 
-    // 2. Drop old indexes if they exist
+    // 2. Drop old index on "no" if it exists
     const dropIfExists = async (indexName) => {
       const exists = indexes.find((idx) => idx.name === indexName);
       if (exists) {
@@ -24,21 +24,22 @@ const run = async () => {
       }
     };
 
-    await dropIfExists("name_1"); // Drop default single-field index on name
-    await dropIfExists("code_1"); // Drop default single-field index on code
-    await dropIfExists("name_1_code_1"); // Drop old compound index if it exists
+    await dropIfExists("no_1");
 
-    // 3. Recreate the compound index
+    // 3. Recreate correct unique index with partial filter
     await collection.createIndex(
-      { name: 1, code: 1 },
-      { unique: true }
+      { no: 1 },
+      {
+        unique: true,
+        partialFilterExpression: { no: { $exists: true, $ne: null } },
+      }
     );
-    console.log("✅ Created compound index: { name, code }");
 
-    console.log("🎉 Indexes fixed successfully!");
+    console.log("✅ Created partial unique index on { no: 1 }");
+    console.log("🎉 Record indexes fixed successfully!");
     process.exit(0);
   } catch (err) {
-    console.error("❌ Error fixing indexes:", err);
+    console.error("❌ Error fixing record indexes:", err);
     process.exit(1);
   }
 };

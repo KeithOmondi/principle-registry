@@ -6,26 +6,29 @@ import { sendEmail} from "../utils/sendMail.js";
 import { User } from "../models/userModel.js";
 
 /**
- * ==============================
- * HELPER: Get next auto-increment
- * ==============================
+ * Helper function to auto-increment record numbers
  */
 async function getNextSequence(name) {
   const counter = await Counter.findByIdAndUpdate(
     name,
     { $inc: { seq: 1 } },
-    { new: true, upsert: true }
+    { new: true, upsert: true, setDefaultsOnInsert: true }
   );
-  return counter.seq;
+
+  // Defensive fallback
+  return counter?.seq ?? 1;
 }
 
 /**
- * ==============================
- * CREATE RECORD
- * ==============================
+ * @desc Create new record
+ * @route POST /api/v1/records/create
+ * @access Private
  */
 export const createRecord = async (req, res) => {
   try {
+    console.log("📥 Incoming request:", req.originalUrl);
+    console.log("📦 Body:", req.body);
+
     const {
       courtStation,
       causeNo,
@@ -33,109 +36,48 @@ export const createRecord = async (req, res) => {
       dateReceived,
       dateOfReceipt,
       leadTime,
-      form60Compliance = "Approved",
-      rejectionReason = "",
-      statusAtGP = "Pending",
-      volumeNo = "",
-      datePublished,
       dateForwardedToGP,
+      form60Compliance,
+      rejectionReason,
     } = req.body;
 
-    // ✅ Validate required fields
-    if (
-      !courtStation ||
-      !causeNo ||
-      !nameOfDeceased ||
-      !dateReceived ||
-      !leadTime
-    ) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Missing required fields" });
-    }
+    // Auto-generate record number
+    const recordNo = await getNextSequence("recordNo");
 
-    // ✅ Validate courtStation
-    const court = await Court.findById(courtStation).lean();
-    if (!court) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Invalid courtStation ID" });
-    }
-
-    // ✅ Generate unique record number (atomic counter)
-    const newNo = await getNextSequence("recordNo");
-
-    const recordData = {
-      no: newNo,
+    const newRecord = new Record({
+      no: recordNo,
       courtStation,
       causeNo,
       nameOfDeceased,
       dateReceived,
+      dateOfReceipt,
       leadTime,
+      dateForwardedToGP,
       form60Compliance,
       rejectionReason,
-      statusAtGP,
-      volumeNo,
-      datePublished,
-      dateForwardedToGP,
-    };
+    });
 
-    if (dateOfReceipt) recordData.dateOfReceipt = dateOfReceipt;
+    const savedRecord = await newRecord.save();
+    console.log("✅ Record created successfully:", savedRecord.no);
 
-    // ✅ Create record
-    const newRecord = await Record.create(recordData);
-
-    // ✅ Send notification email asynchronously
-    (async () => {
-      try {
-        const reasonText = rejectionReason?.trim() || "No reason provided";
-        const text =
-          form60Compliance === "Approved"
-            ? `The record for ${nameOfDeceased} (Cause No. ${causeNo}) has been approved.`
-            : `The record for ${nameOfDeceased} (Cause No. ${causeNo}) has been rejected. Reason: ${reasonText}`;
-
-        const html = judicialEmailTemplate({
-          form60Compliance,
-          nameOfDeceased,
-          causeNo,
-          courtName: court.name,
-          reason: reasonText,
-          dateForwardedToGP,
-        });
-
-        await sendEmail({
-          to: court.primaryEmail,
-          cc: court.secondaryEmails,
-          subject:
-            form60Compliance === "Approved"
-              ? "Document Approved"
-              : "Document Rejected",
-          message: text,
-          html,
-        });
-      } catch (err) {
-        console.error("Email sending failed:", err.message);
-      }
-    })();
-
-    // ✅ Success response
-    res.status(201).json({ success: true, data: newRecord });
+    res.status(201).json({
+      success: true,
+      message: "Record created successfully",
+      data: savedRecord,
+    });
   } catch (error) {
-    console.error("Create record error:", error.message);
+    console.error("Create record error:", error);
 
-    // ✅ Handle duplicate key error gracefully
-    if (error.code === 11000 && error.keyPattern?.no) {
+    if (error.code === 11000) {
       return res.status(400).json({
         success: false,
-        message:
-          "Duplicate record number detected. Please try again in a moment.",
+        message: "Duplicate record number detected. Please try again.",
       });
     }
 
     res.status(500).json({
       success: false,
-      message: "Server error",
-      error: error.message,
+      message: "Server error. Please try again later.",
     });
   }
 };
