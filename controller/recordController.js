@@ -248,161 +248,123 @@ export const bulkUpdateDateForwarded = async (req, res) => {
   try {
     const { ids, date } = req.body;
 
-    /* -----------------------------------------------------------------
-       🧩 1. Validate Request
-    ------------------------------------------------------------------*/
+    // 🧩 1. Validate
     if (!ids || !Array.isArray(ids) || !date) {
-      return res.status(400).json({
-        success: false,
-        message: "Missing ids or date",
-      });
+      return res.status(400).json({ success: false, message: "Missing ids or date" });
     }
 
     const validIds = ids.filter((id) => mongoose.Types.ObjectId.isValid(id));
-    if (validIds.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "No valid IDs provided",
-      });
+    if (!validIds.length) {
+      return res.status(400).json({ success: false, message: "No valid IDs provided" });
     }
 
-    /* -----------------------------------------------------------------
-       🛠️ 2. Update Records
-    ------------------------------------------------------------------*/
+    // 🛠️ 2. Update
     const result = await Record.updateMany(
       { _id: { $in: validIds } },
       { dateForwardedToGP: date }
     );
 
-    const updatedRecords = await Record.find({ _id: { $in: validIds } });
+    const updatedRecords = await Record.find({ _id: { $in: validIds } })
+      .populate("courtStation", "name primaryEmail secondaryEmails");
 
     if (!updatedRecords.length) {
-      return res.status(404).json({
-        success: false,
-        message: "No matching records found",
-      });
+      return res.status(404).json({ success: false, message: "No matching records found" });
     }
 
     console.log(`✅ ${result.modifiedCount} record(s) updated.`);
 
-    /* -----------------------------------------------------------------
-       👥 3. Fetch Admins (with fallback)
-    ------------------------------------------------------------------*/
-    let admins = await User.find({
-      role: "Admin",
-      accountVerified: true,
-    }).select("email name");
-
-    // Fallback if no verified admins exist
+    // 👥 3. Fetch Admins
+    let admins = await User.find({ role: "Admin", accountVerified: true }).select("email name");
     if (!admins.length) {
-      console.warn("⚠️ No verified admins found in DB — using fallback email.");
       admins = [{ email: "principalregistry@gmail.com", name: "System Admin" }];
     }
-
     const adminEmails = admins.map((a) => a.email);
     console.log("📧 Admin recipients:", adminEmails);
 
-    /* -----------------------------------------------------------------
-       ✉️ 4. Send Branded Summary Email to Admins
-    ------------------------------------------------------------------*/
-    if (adminEmails.length > 0) {
-      const recordsTable = `
-        <table style="width:100%; border-collapse: collapse; margin-top: 16px;">
-          <thead>
-            <tr style="background-color:#e8f0fe; color:#003366;">
-              <th style="border:1px solid #ccc; padding:8px; text-align:left;">Case Number</th>
-              <th style="border:1px solid #ccc; padding:8px; text-align:left;">User Email</th>
-              <th style="border:1px solid #ccc; padding:8px; text-align:left;">Forwarding Date</th>
+    // 🏛️ 4. Get only affected courts
+    const courtIds = [...new Set(updatedRecords.map((r) => r.courtStation._id.toString()))];
+    const courts = await Court.find({ _id: { $in: courtIds } }).select("name primaryEmail secondaryEmails");
+    console.log(`🏛️ Sending court notifications to ${courts.length} court(s).`);
+
+    // ✉️ 5. Prepare Email Template
+    const recordsTable = `
+      <table style="width:100%; border-collapse:collapse; margin-top:16px;">
+        <thead>
+          <tr style="background-color:#e8f0fe; color:#003366;">
+            <th style="border:1px solid #ccc; padding:8px;">Cause No</th>
+            <th style="border:1px solid #ccc; padding:8px;">Court</th>
+            <th style="border:1px solid #ccc; padding:8px;">Date Forwarded</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${updatedRecords.map(r => `
+            <tr>
+              <td style="border:1px solid #ccc; padding:8px;">${r.causeNo}</td>
+              <td style="border:1px solid #ccc; padding:8px;">${r.courtStation?.name || "—"}</td>
+              <td style="border:1px solid #ccc; padding:8px;">${date}</td>
             </tr>
-          </thead>
-          <tbody>
-            ${updatedRecords
-              .map(
-                (r) => `
-              <tr>
-                <td style="border:1px solid #ccc; padding:8px;">${r.caseNumber || r._id}</td>
-                <td style="border:1px solid #ccc; padding:8px;">${r.email || "—"}</td>
-                <td style="border:1px solid #ccc; padding:8px;">${date}</td>
-              </tr>
-            `
-              )
-              .join("")}
-          </tbody>
-        </table>
-      `;
+          `).join("")}
+        </tbody>
+      </table>
+    `;
 
-      const htmlTemplate = `
-        <div style="font-family:Arial, sans-serif; color:#333; line-height:1.6; border:1px solid #ddd; border-radius:8px; overflow:hidden;">
-          <!-- HEADER -->
-          <div style="background:#003366; color:#fff; text-align:center; padding:20px;">
-            <img 
-              src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTPNBt7QKAwM2lLeRgRX3PBJdHb9t-K3xe4PQ&s" 
-              alt="Principal Registry Logo" 
-              style="width:60px; height:60px; vertical-align:middle; border-radius:6px;"/>
-            <h2 style="margin:10px 0 0;">Principal Registry - Court Records System</h2>
-          </div>
-
-          <!-- BODY -->
-          <div style="padding:20px;">
-            <p>Dear Admin Team,</p>
-            <p>
-              The forwarding date for <strong>${updatedRecords.length}</strong> record(s)
-              has been successfully updated and marked as <strong>Forwarded to the Government Printer (G.P.)</strong> 
-              on <strong>${date}</strong>.
-            </p>
-
-            ${recordsTable}
-
-            <p style="margin-top:20px;">✅ Modified count: ${result.modifiedCount}</p>
-
-            <p style="margin-top:24px;">
-              Regards,<br/>
-              <strong>Principal Registry System</strong><br/>
-              <span style="font-size:12px; color:#666;">This is an automated notification — please do not reply.</span>
-            </p>
-          </div>
-
-          <!-- FOOTER -->
-          <div style="background:#f4f4f4; text-align:center; font-size:12px; color:#777; padding:12px;">
-            © ${new Date().getFullYear()} Principal Registry. All rights reserved.
-          </div>
+    const htmlTemplate = `
+      <div style="font-family:Arial,sans-serif; border:1px solid #ddd; border-radius:8px;">
+        <div style="background:#003366; color:#fff; text-align:center; padding:20px;">
+          <h2>Principal Registry - Court Records System</h2>
         </div>
-      `;
+        <div style="padding:20px;">
+          <p>Dear Team,</p>
+          <p>The forwarding date for <strong>${updatedRecords.length}</strong> record(s) has been updated to <strong>${date}</strong>.</p>
+          ${recordsTable}
+          <p style="margin-top:20px;">✅ Modified count: ${result.modifiedCount}</p>
+          <p>Regards,<br><strong>Principal Registry System</strong></p>
+        </div>
+        <div style="background:#f4f4f4; text-align:center; font-size:12px; color:#777; padding:12px;">
+          © ${new Date().getFullYear()} Principal Registry. All rights reserved.
+        </div>
+      </div>
+    `;
 
+    // 📤 6. Send to Admins
+    await sendEmail({
+      to: adminEmails[0],
+      cc: adminEmails.slice(1),
+      subject: "📋 Bulk Record Forwarding Date Update Summary",
+      html: htmlTemplate,
+    });
+    console.log("✅ Summary email sent to admins.");
+
+    // 📤 7. Send to Each Affected Court
+    for (const court of courts) {
       try {
-        console.log("🟢 Sending summary email to admins...");
         await sendEmail({
-          to: adminEmails[0],
-          cc: adminEmails.slice(1),
-          subject: "📋 Bulk Record Forwarding Date Update Summary",
+          to: court.primaryEmail,
+          cc: court.secondaryEmails || [],
+          subject: "📋 Record Forwarding Date Updated",
           html: htmlTemplate,
         });
-        console.log("✅ Branded summary email sent to admins");
+        console.log(`✅ Email sent to court: ${court.name}`);
       } catch (err) {
-        console.error("❌ Failed to send summary email:", err.message);
+        console.error(`❌ Failed to email court ${court.name}:`, err.message);
       }
     }
 
-    /* -----------------------------------------------------------------
-       📩 5. Notify Each User Individually
-    ------------------------------------------------------------------*/
+    // 📩 8. Notify Each User (if applicable)
     for (const record of updatedRecords) {
       if (record.email) {
         try {
-          console.log(`🟢 Sending user email to: ${record.email}`);
           await sendEmail({
             to: record.email,
             subject: "Record Forwarding Date Updated",
             html: `
-              <div style="font-family:Arial, sans-serif; line-height:1.6; color:#333;">
-                <div style="background:#003366; color:#fff; padding:12px; border-radius:6px 6px 0 0;">
+              <div style="font-family:Arial,sans-serif; line-height:1.6; color:#333;">
+                <div style="background:#003366; color:#fff; padding:12px;">
                   <h3 style="margin:0;">Principal Registry Notification</h3>
                 </div>
-                <div style="padding:16px; border:1px solid #ddd; border-top:none;">
-                  <p>Dear User,</p>
-                  <p>Your record <strong>${record.caseNumber || record._id}</strong> has been updated.</p>
+                <div style="padding:16px; border:1px solid #ddd;">
+                  <p>Your record <strong>${record.causeNo}</strong> has been updated.</p>
                   <p>New forwarding date: <strong>${date}</strong></p>
-                  <p>Regards,<br/><strong>Principal Registry System</strong></p>
                 </div>
               </div>
             `,
@@ -414,12 +376,10 @@ export const bulkUpdateDateForwarded = async (req, res) => {
       }
     }
 
-    /* -----------------------------------------------------------------
-       ✅ 6. Final Response
-    ------------------------------------------------------------------*/
+    // ✅ 9. Final Response
     res.status(200).json({
       success: true,
-      message: `Records updated successfully. Admin summary sent to ${adminEmails.length} recipient(s).`,
+      message: `Records updated successfully. Admin and affected court(s) notified.`,
       modifiedCount: result.modifiedCount,
     });
   } catch (error) {
@@ -431,6 +391,7 @@ export const bulkUpdateDateForwarded = async (req, res) => {
     });
   }
 };
+
 
 
 /**
