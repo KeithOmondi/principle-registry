@@ -248,7 +248,9 @@ export const bulkUpdateDateForwarded = async (req, res) => {
   try {
     const { ids, date } = req.body;
 
-    // ✅ Validate
+    /* -----------------------------------------------------------------
+       🧩 1. Validate Request
+    ------------------------------------------------------------------*/
     if (!ids || !Array.isArray(ids) || !date) {
       return res.status(400).json({
         success: false,
@@ -264,7 +266,9 @@ export const bulkUpdateDateForwarded = async (req, res) => {
       });
     }
 
-    // ✅ Update records
+    /* -----------------------------------------------------------------
+       🛠️ 2. Update Records
+    ------------------------------------------------------------------*/
     const result = await Record.updateMany(
       { _id: { $in: validIds } },
       { dateForwardedToGP: date }
@@ -279,17 +283,27 @@ export const bulkUpdateDateForwarded = async (req, res) => {
       });
     }
 
-    // ✅ Fetch verified Admins
-    const admins = await User.find({
+    console.log(`✅ ${result.modifiedCount} record(s) updated.`);
+
+    /* -----------------------------------------------------------------
+       👥 3. Fetch Admins (with fallback)
+    ------------------------------------------------------------------*/
+    let admins = await User.find({
       role: "Admin",
       accountVerified: true,
     }).select("email name");
+
+    // Fallback if no verified admins exist
+    if (!admins.length) {
+      console.warn("⚠️ No verified admins found in DB — using fallback email.");
+      admins = [{ email: "principalregistry@gmail.com", name: "System Admin" }];
+    }
 
     const adminEmails = admins.map((a) => a.email);
     console.log("📧 Admin recipients:", adminEmails);
 
     /* -----------------------------------------------------------------
-       ✉️ 1. Branded Summary Email (with Logo)
+       ✉️ 4. Send Branded Summary Email to Admins
     ------------------------------------------------------------------*/
     if (adminEmails.length > 0) {
       const recordsTable = `
@@ -306,12 +320,8 @@ export const bulkUpdateDateForwarded = async (req, res) => {
               .map(
                 (r) => `
               <tr>
-                <td style="border:1px solid #ccc; padding:8px;">${
-                  r.caseNumber || r._id
-                }</td>
-                <td style="border:1px solid #ccc; padding:8px;">${
-                  r.email || "—"
-                }</td>
+                <td style="border:1px solid #ccc; padding:8px;">${r.caseNumber || r._id}</td>
+                <td style="border:1px solid #ccc; padding:8px;">${r.email || "—"}</td>
                 <td style="border:1px solid #ccc; padding:8px;">${date}</td>
               </tr>
             `
@@ -336,17 +346,14 @@ export const bulkUpdateDateForwarded = async (req, res) => {
           <div style="padding:20px;">
             <p>Dear Admin Team,</p>
             <p>
-  The forwarding date for <strong>${updatedRecords.length}</strong> record(s)
-  has been successfully updated and marked as <strong>Forwarded to the Government Printer (G.P.)</strong> 
-  on <strong>${date}</strong>.
-</p>
-
+              The forwarding date for <strong>${updatedRecords.length}</strong> record(s)
+              has been successfully updated and marked as <strong>Forwarded to the Government Printer (G.P.)</strong> 
+              on <strong>${date}</strong>.
+            </p>
 
             ${recordsTable}
 
-            <p style="margin-top:20px;">✅ Modified count: ${
-              result.modifiedCount
-            }</p>
+            <p style="margin-top:20px;">✅ Modified count: ${result.modifiedCount}</p>
 
             <p style="margin-top:24px;">
               Regards,<br/>
@@ -362,24 +369,27 @@ export const bulkUpdateDateForwarded = async (req, res) => {
         </div>
       `;
 
-      await sendEmail({
-        to: adminEmails[0],
-        cc: adminEmails.slice(1),
-        subject: "📋 Bulk Record Forwarding Date Update Summary",
-        html: htmlTemplate,
-      });
-
-      console.log("✅ Branded summary email sent to admins");
-    } else {
-      console.warn("⚠️ No verified admin emails found.");
+      try {
+        console.log("🟢 Sending summary email to admins...");
+        await sendEmail({
+          to: adminEmails[0],
+          cc: adminEmails.slice(1),
+          subject: "📋 Bulk Record Forwarding Date Update Summary",
+          html: htmlTemplate,
+        });
+        console.log("✅ Branded summary email sent to admins");
+      } catch (err) {
+        console.error("❌ Failed to send summary email:", err.message);
+      }
     }
 
     /* -----------------------------------------------------------------
-       📩 2. Notify Each User Individually
+       📩 5. Notify Each User Individually
     ------------------------------------------------------------------*/
     for (const record of updatedRecords) {
       if (record.email) {
         try {
+          console.log(`🟢 Sending user email to: ${record.email}`);
           await sendEmail({
             to: record.email,
             subject: "Record Forwarding Date Updated",
@@ -390,9 +400,7 @@ export const bulkUpdateDateForwarded = async (req, res) => {
                 </div>
                 <div style="padding:16px; border:1px solid #ddd; border-top:none;">
                   <p>Dear User,</p>
-                  <p>Your record <strong>${
-                    record.caseNumber || record._id
-                  }</strong> has been updated.</p>
+                  <p>Your record <strong>${record.caseNumber || record._id}</strong> has been updated.</p>
                   <p>New forwarding date: <strong>${date}</strong></p>
                   <p>Regards,<br/><strong>Principal Registry System</strong></p>
                 </div>
@@ -401,24 +409,21 @@ export const bulkUpdateDateForwarded = async (req, res) => {
           });
           console.log(`📨 User email sent: ${record.email}`);
         } catch (err) {
-          console.error(
-            `❌ Failed to send email to ${record.email}:`,
-            err.message
-          );
+          console.error(`❌ Failed to send email to ${record.email}:`, err.message);
         }
       }
     }
 
     /* -----------------------------------------------------------------
-       ✅ 3. Final Response
+       ✅ 6. Final Response
     ------------------------------------------------------------------*/
     res.status(200).json({
       success: true,
-      message: `Records updated successfully. Admin summary sent to ${adminEmails.length} recipients.`,
+      message: `Records updated successfully. Admin summary sent to ${adminEmails.length} recipient(s).`,
       modifiedCount: result.modifiedCount,
     });
   } catch (error) {
-    console.error("Bulk update error:", error.message);
+    console.error("❌ Bulk update error:", error.message);
     res.status(500).json({
       success: false,
       message: "Failed to update records or send emails",
@@ -426,6 +431,7 @@ export const bulkUpdateDateForwarded = async (req, res) => {
     });
   }
 };
+
 
 /**
  * ==============================
