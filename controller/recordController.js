@@ -315,7 +315,7 @@ export const bulkUpdateDateForwarded = async (req, res) => {
         </div>
         <div style="padding:20px;">
           <p>Dear Team,</p>
-          <p>The forwarding date for <strong>${updatedRecords.length}</strong> record(s) has been updated to <strong>${date}</strong>.</p>
+          <p><strong>{updatedRecords.length}</strong> record(s) have been forwarded to G.P on <strong>{date}</strong>.</p>
           ${recordsTable}
           <p style="margin-top:20px;">✅ Modified count: ${result.modifiedCount}</p>
           <p>Regards,<br><strong>Principal Registry System</strong></p>

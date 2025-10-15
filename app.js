@@ -8,6 +8,7 @@ import authRouter from "./routes/authRouter.js";
 import recordRouter from "./routes/recordRouter.js";
 import courtRouter from "./routes/courtRouter.js";
 import userRouter from "./routes/userRouter.js";
+import gazetteRouter from "./routes/gazetteRouter.js";
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -43,6 +44,7 @@ app.use("/api/v1/auth", authRouter);
 app.use("/api/v1/records", recordRouter);
 app.use("/api/v1/courts", courtRouter);
 app.use("/api/v1/user", userRouter);
+app.use("/api/v1/gazette", gazetteRouter);
 
 // DB connection
 connectDB();
