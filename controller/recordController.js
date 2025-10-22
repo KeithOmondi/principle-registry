@@ -4,6 +4,8 @@ import Record from "../models/Record.js";
 import Counter from "../models/Counter.js";
 import { sendEmail} from "../utils/sendMail.js";
 import { User } from "../models/userModel.js";
+import { Parser } from "json2csv";
+
 
 /**
  * Helper function to auto-increment record numbers
@@ -633,6 +635,39 @@ export const verifyRecords = async (req, res) => {
       message: "Failed to verify records",
       error: error.message,
     });
+  }
+};
+
+export const downloadMonthlyReport = async (req, res) => {
+  try {
+    const month = parseInt(req.query.month) || new Date().getMonth() + 1;
+    const year = parseInt(req.query.year) || new Date().getFullYear();
+
+    const records = await Record.find({
+      $expr: {
+        $and: [
+          { $eq: [{ $month: "$dateReceived" }, month] },
+          { $eq: [{ $year: "$dateReceived" }, year] },
+        ],
+      },
+    })
+      .populate("courtStation", "name")
+      .lean();
+
+    if (!records.length) {
+      return res.status(404).json({ message: "No records for this month" });
+    }
+
+    const fields = ["no", "causeNo", "nameOfDeceased", "courtStation.name", "form60Compliance", "dateReceived"];
+    const parser = new Parser({ fields });
+    const csv = parser.parse(records);
+
+    res.header("Content-Type", "text/csv");
+    res.attachment(`Monthly_Report_${month}-${year}.csv`);
+    return res.send(csv);
+  } catch (error) {
+    console.error("downloadMonthlyReport error:", error);
+    res.status(500).json({ message: "Failed to generate monthly report" });
   }
 };
 

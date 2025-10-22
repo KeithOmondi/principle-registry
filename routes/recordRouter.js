@@ -10,6 +10,7 @@ import {
   getRecentRecords,
   verifyRecords,
   bulkUpdateDateForwarded,
+  downloadMonthlyReport,
 } from "../controller/recordController.js";
 import { isAuthenticated, isAuthorized } from "../middlewares/authMiddleware.js";
 
@@ -46,5 +47,9 @@ router.post("/verify", isAuthenticated, isAuthorized("Admin"), verifyRecords);
 
 // Admin-only: Bulk update dateForwarded
 router.patch("/bulk-update-forwarded", isAuthenticated, isAuthorized("Admin"), bulkUpdateDateForwarded);
+
+router.get("/monthly-report", isAuthenticated, isAuthorized("Admin"), downloadMonthlyReport);
+
+
 
 export default router;
