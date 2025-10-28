@@ -4,7 +4,7 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-const MONGO_URI = "mongodb+srv://principalregistry_db_user:pr.@cluster0.pn94ibf.mongodb.net/PRF60?retryWrites=true&w=majority&appName=Cluster0";
+const MONGO_URI = "";
 
 const courts = [
   {

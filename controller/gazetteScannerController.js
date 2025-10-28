@@ -1,14 +1,11 @@
-// controllers/gazetteScannerController.js
 import asyncHandler from "express-async-handler";
 import fs from "fs/promises";
 import pdfParse from "pdf-parse";
-
 import Record from "../models/Record.js";
 import Gazette from "../models/Gazette.js";
-import ScanLog from "../models/scanLogModel.js";
 import Court from "../models/Court.js";
+import ScanLog from "../models/scanLogModel.js"
 
-// --- 🧹 Scan Gazette ---
 export const scanGazette = asyncHandler(async (req, res) => {
   try {
     if (!req.file) {
@@ -21,131 +18,117 @@ export const scanGazette = asyncHandler(async (req, res) => {
       throw new Error("User not authenticated");
     }
 
-    // 3️⃣ Async read PDF
+    // 1️⃣ Read and parse PDF
     const pdfBuffer = await fs.readFile(req.file.path);
+    const pdfData = await pdfParse(pdfBuffer);
+    let text = pdfData.text.replace(/\s+/g, " ").trim();
 
-    // Optional: Timeout wrapper for large PDFs
-    const pdfData = await new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error("PDF parse timeout")), 30000);
-      pdfParse(pdfBuffer)
-        .then((data) => {
-          clearTimeout(timeout);
-          resolve(data);
-        })
-        .catch((err) => {
-          clearTimeout(timeout);
-          reject(err);
-        });
-    });
+    console.log("📄 PDF sample:", text.slice(0, 400));
 
-    const text = pdfData.text.replace(/\s+/g, " ").trim();
+    // 2️⃣ Extract Gazette metadata
+    const volumeMatch = text.match(/Vol\.?\s*[A-Z]*\s*[—-]?\s*No\.?\s*\d+/i);
+    const dateMatch = text.match(/\b\d{1,2}(st|nd|rd|th)?\s+(January|February|March|April|May|June|July|August|September|October|November|December)[,]?\s+\d{4}\b/i);
 
-    // 4️⃣ Extract Gazette metadata
-    const volumeMatch =
-      text.match(/Vol\.?\s*[A-Z]+\s*[—-]?\s*No\.?\s*\d+/i) ||
-      text.match(/Volume\s+[A-Z]+\s*No\.?\s*\d+/i);
-
-    const dateMatch =
-      text.match(
-        /(Published\s+on\s+)?\b\d{1,2}(st|nd|rd|th)?\s+(January|February|March|April|May|June|July|August|September|October|November|December),?\s+\d{4}\b/i
-      ) ||
-      text.match(
-        /\b\d{1,2}(st|nd|rd|th)?\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}\b/i
-      );
-
-    const volumeNo = volumeMatch ? volumeMatch[0].trim() : "Unknown Volume";
+    const volumeNo = volumeMatch ? volumeMatch[0].replace(/Vol\.?\s*/i, "").trim() : "Unknown Volume";
     const datePublished = dateMatch
       ? new Date(dateMatch[0].replace(/(st|nd|rd|th)/, ""))
       : new Date();
 
     console.log("📘 Volume:", volumeNo, "| 📅 Date:", datePublished);
 
-    // 5️⃣ Extract case blocks
-    const causeBlocks =
-      text.match(/(Cause\s+No\.?\s*\d+\/\d{4}.*?)(?=Cause\s+No\.|\Z)/gis) || [];
+    // 3️⃣ Split Gazette by courts
+    const courtSections = text.split(/IN THE HIGH COURT OF KENYA AT\s+/i).slice(1);
+    const extractedCases = [];
 
-    if (causeBlocks.length === 0) console.warn("⚠️ No cases extracted from PDF");
+    for (const section of courtSections) {
+      const courtName = section.match(/^([A-Z]+)/i)?.[1]?.trim().toUpperCase() || "UNKNOWN";
+      const courtDoc = await Court.findOne({ name: { $regex: courtName, $options: "i" } });
+      const courtStationId = courtDoc ? courtDoc._id : null;
 
-    const extractedCases = await Promise.all(
-      causeBlocks.map(async (block) => {
-        const causeNo = block.match(/Cause\s+No\.?\s*\d+\/\d{4}/i)?.[0]?.trim() || "N/A";
+      // Extract individual causes for this court
+      const causeBlocks = section.match(/CAUSE\s+NO\.\s*[\w/]+\s+.*?(?=(CAUSE\s+NO\.|GAZETTE NOTICE|$))/gis) || [];
 
-        const courtNameMatch =
-          block.match(/HIGH\s+COURT\s+AT\s+[A-Z]+/i)?.[0]?.trim() || "Unknown Station";
+      for (const block of causeBlocks) {
+        const causeNo = block.match(/CAUSE\s+NO\.\s*[\w/]+/i)?.[0]?.replace("CAUSE NO.", "").trim() || "N/A";
 
-        const courtDoc = await Court.findOne({ name: courtNameMatch.toUpperCase() });
-        const courtStationId = courtDoc ? courtDoc._id : null;
+        // Extract Deceased Name
+        const deceasedMatch = block.match(/estate\s+of\s+([A-Z\s.'’]+?)(?=,|\slate|\swho|\sdeceased)/i);
+        const nameOfDeceased = deceasedMatch
+          ? deceasedMatch[1].replace(/\s+/g, " ").trim()
+          : "Unknown Deceased";
 
-        const nameOfDeceased =
-          block
-            .match(/(Estate\s+of\s+)?[A-Z][A-Z\s']+(?=\s*(deceased|–|—))/i)?.[0]
-            ?.replace(/Estate\s+of\s+/i, "")
-            ?.trim() || "Unknown Deceased";
-
-        return {
+        extractedCases.push({
           causeNo,
           courtStation: courtStationId,
-          nameOfDeceased,
+          courtName,
+          nameOfDeceased: nameOfDeceased.toLowerCase(),
           volumeNo,
           datePublished,
           status: "Published",
-        };
-      })
-    );
-
-    console.log(`🧾 Extracted ${extractedCases.length} cases`);
-
-    // 6️⃣ Update Records in DB
-    const records = await Record.find().populate("courtStation", "name");
-    let publishedCount = 0;
-    const updatedRecords = [];
-
-    for (const record of records) {
-      const name = record.nameOfDeceased?.trim().toLowerCase();
-      if (text.toLowerCase().includes(name)) {
-        record.statusAtGP = "Published";
-        record.datePublished = datePublished;
-        record.volumeNo = volumeNo;
-        await record.save();
-        publishedCount++;
-        updatedRecords.push(record);
+        });
       }
     }
 
-    // 7️⃣ Save Gazette
+    console.log(`🧾 Extracted ${extractedCases.length} cases`);
+
+    // 4️⃣ Match with DB records (PDF = source of truth)
+    const matchedCases = [];
+    for (const c of extractedCases) {
+      const record = await Record.findOne({
+        nameOfDeceased: { $regex: `^${c.nameOfDeceased}$`, $options: "i" },
+      });
+
+      if (record) {
+        record.statusAtGP = "Published";
+        record.volumeNo = volumeNo;
+        record.datePublished = datePublished;
+        await record.save();
+
+        matchedCases.push({
+          ...c,
+          recordId: record._id,
+          courtStation: record.courtStation,
+        });
+      }
+    }
+
+    console.log(`✅ Matched ${matchedCases.length} with DB`);
+
+    // 5️⃣ Save Gazette and Log
     const gazette = await Gazette.create({
       uploadedBy: req.user._id,
       fileName: req.file.originalname,
       volumeNo,
       datePublished,
-      totalRecords: records.length,
-      publishedCount,
-      cases: extractedCases,
+      totalRecords: extractedCases.length,
+      publishedCount: matchedCases.length,
+      cases: matchedCases,
     });
 
-    // 8️⃣ Save Scan Log
     await ScanLog.create({
       uploadedBy: req.user._id,
       fileName: req.file.originalname,
-      totalRecords: records.length,
-      publishedCount,
+      totalRecords: extractedCases.length,
+      publishedCount: matchedCases.length,
       remarks: `Gazette ${req.file.originalname} scanned successfully.`,
       volumeNo,
       datePublished,
     });
 
-    // 9️⃣ Cleanup
-    fs.unlink(req.file.path).catch((err) =>
-      console.warn("⚠️ Failed to delete temp file:", err.message)
-    );
+    await fs.unlink(req.file.path).catch(() => {});
 
-    // 🔟 Return response
     res.status(201).json({
       message: "Scan completed successfully",
       gazette,
-      updatedRecords,
-      publishedCount,
-      totalRecords: records.length,
+      publishedCount: matchedCases.length,
+      totalRecords: extractedCases.length,
+      tableData: matchedCases.map(c => ({
+        volumeNo: c.volumeNo,
+        courtStation: c.courtName,
+        nameOfDeceased: c.nameOfDeceased,
+        causeNo: c.causeNo,
+        datePublished: c.datePublished,
+      })),
     });
   } catch (err) {
     console.error("❌ scanGazette error:", err.message);
@@ -153,105 +136,123 @@ export const scanGazette = asyncHandler(async (req, res) => {
   }
 });
 
+
+
 /* ======================================================
-   🧩 Get All Gazettes (with case preview)
+   🧩 Get All Gazettes
 ====================================================== */
 export const getGazettes = asyncHandler(async (req, res) => {
-  try {
-    const gazettes = await Gazette.find()
-      .populate("uploadedBy", "name email")
-      .sort({ createdAt: -1 })
-      .lean();
+  const gazettes = await Gazette.find()
+    .populate("uploadedBy", "name email")
+    .sort({ createdAt: -1 })
+    .lean();
 
-    const gazettesWithCasePreview = await Promise.all(
-      gazettes.map(async (gazette) => {
-        const casePreview = await Promise.all(
-          gazette.cases.slice(0, 3).map(async (caseItem) => {
-            if (caseItem.courtStation) {
-              const court = await Court.findById(caseItem.courtStation).lean();
-              return {
-                ...caseItem,
-                courtStation: court
-                  ? { _id: court._id, name: court.name, level: court.level }
-                  : null,
-              };
-            }
-            return caseItem;
-          })
-        );
-
-        return {
-          _id: gazette._id,
-          fileName: gazette.fileName,
-          volumeNo: gazette.volumeNo,
-          datePublished: gazette.datePublished,
-          totalRecords: gazette.cases.length,
-          publishedCount: gazette.publishedCount,
-          uploadedBy: gazette.uploadedBy,
-          casePreview,
-        };
+  const gazettesWithPreview = await Promise.all(
+    gazettes.map(async (gazette) => {
+      // ⚙️ Relax filters to avoid mismatches (volume dash differences, etc.)
+      const dbRecords = await Record.find({
+        nameOfDeceased: {
+          $in: gazette.cases.map((c) => new RegExp(`^${c.nameOfDeceased}$`, "i")),
+        },
       })
-    );
+        .populate("courtStation", "name")
+        .lean();
 
-    res.status(200).json({
-      success: true,
-      count: gazettesWithCasePreview.length,
-      gazettes: gazettesWithCasePreview,
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Failed to fetch gazettes",
-      error: error.message,
-    });
-  }
+      // 🧮 Keep only published ones (safely filter in code)
+      const publishedCases = dbRecords
+        .filter((r) => r.statusAtGP?.toLowerCase() === "published")
+        .map((r) => ({
+          volumeNo: gazette.volumeNo,
+          courtStation: r.courtStation?.name || "Unknown",
+          nameOfDeceased: r.nameOfDeceased,
+          causeNo: r.causeNo,
+          datePublished: gazette.datePublished,
+        }));
+
+      return {
+        _id: gazette._id.toString(),
+        volumeNo: gazette.volumeNo,
+        datePublished: gazette.datePublished,
+        uploadedBy: gazette.uploadedBy,
+        totalRecords: gazette.totalRecords,
+        publishedCount: publishedCases.length,
+        casePreview: publishedCases.slice(0, 3),
+      };
+    })
+  );
+
+  res.status(200).json({
+    success: true,
+    count: gazettesWithPreview.length,
+    gazettes: gazettesWithPreview,
+  });
 });
 
-// Get Gazette Details with case court info
+
+
+/* ======================================================
+   🧩 Get Gazette Details
+====================================================== */
+/* ======================================================
+   🧩 Get Gazette Details (Detailed Table)
+====================================================== */
+/* ======================================================
+   🧩 Get Gazette Details (Robust Matching for Full Table)
+====================================================== */
 export const getGazetteDetails = asyncHandler(async (req, res) => {
   const { id } = req.params;
+  if (!id.match(/^[0-9a-fA-F]{24}$/)) throw new Error("Invalid Gazette ID");
 
   const gazette = await Gazette.findById(id)
     .populate("uploadedBy", "name email")
     .lean();
 
-  if (!gazette) {
-    res.status(404);
-    throw new Error("Gazette not found");
-  }
+  if (!gazette) throw new Error("Gazette not found");
 
-  const populatedCases = await Promise.all(
-    gazette.cases.map(async (caseItem) => {
-      if (caseItem.courtStation) {
-        const court = await Court.findById(caseItem.courtStation).lean();
-        return {
-          ...caseItem,
-          courtStation: court
-            ? { _id: court._id, name: court.name, level: court.level }
-            : null,
-        };
-      }
-      return caseItem;
-    })
-  );
+  // 🧩 Match more flexibly (ignore case, spacing, etc.)
+  const dbRecords = await Record.find({
+    nameOfDeceased: {
+      $in: gazette.cases.map((c) => new RegExp(`^${c.nameOfDeceased}$`, "i")),
+    },
+  })
+    .populate("courtStation", "name")
+    .lean();
 
-  res.json({
-    _id: gazette._id,
-    fileName: gazette.fileName,
-    datePublished: gazette.datePublished,
-    volumeNo: gazette.volumeNo,
-    totalRecords: populatedCases.length,
-    cases: populatedCases,
-    uploadedBy: gazette.uploadedBy,
-    publishedCount: gazette.publishedCount,
+  // 🧮 Keep only published ones (and avoid nulls)
+  const tableCases = dbRecords
+    .filter((r) => r.statusAtGP?.toLowerCase() === "published")
+    .map((r) => ({
+      volumeNo: gazette.volumeNo,
+      courtStation: r.courtStation?.name || "Unknown",
+      nameOfDeceased: r.nameOfDeceased,
+      causeNo: r.causeNo,
+      datePublished: gazette.datePublished,
+    }));
+
+  res.status(200).json({
+    success: true,
+    gazette: {
+      _id: gazette._id.toString(),
+      fileName: gazette.fileName,
+      volumeNo: gazette.volumeNo,
+      datePublished: gazette.datePublished,
+      uploadedBy: gazette.uploadedBy,
+      totalRecords: gazette.totalRecords,
+      publishedCount: tableCases.length,
+      cases: tableCases,
+    },
   });
 });
 
-// Fetch scan logs
+
+
+/* ======================================================
+   🧾 Get Scan Logs
+====================================================== */
 export const getScanLogs = asyncHandler(async (req, res) => {
   const logs = await ScanLog.find()
     .populate("uploadedBy", "name email")
-    .sort({ createdAt: -1 });
-
+    .sort({ createdAt: -1 })
+    .lean();
   res.json({ logs });
 });

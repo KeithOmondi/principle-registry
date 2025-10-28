@@ -1,25 +1,25 @@
 import express from "express";
-import { getGazetteDetails, getGazettes, getScanLogs, scanGazette } from "../controller/gazetteScannerController.js";
+import {
+  scanGazette,
+  getGazettes,
+  getGazetteDetails,
+  getScanLogs
+} from "../controller/gazetteScannerController.js";
 import { isAuthenticated, isAuthorized } from "../middlewares/authMiddleware.js";
 import { upload } from "../middlewares/uploadMiddleware.js";
 
 const router = express.Router();
 
-router.post(
-  "/scan",
-  upload.single("scan"),
-  isAuthenticated,
-  isAuthorized("Admin"),
-  scanGazette
-);
+// 🧾 Scan Gazette
+router.post("/scan", upload.single("scan"), isAuthenticated, isAuthorized("Admin"), scanGazette);
 
-// View Scan Logs
-router.get("/logs", isAuthenticated, isAuthorized("Admin"), getScanLogs);
-
-// ✅ Fetch all gazettes (metadata only)
+// 📚 Fetch all gazettes
 router.get("/get", isAuthenticated, isAuthorized("Admin"), getGazettes);
 
-// Fetch Gazette 
-router.get("/get/:id", isAuthenticated, isAuthorized("Admin"), getGazetteDetails)
+// 📑 Fetch Gazette details
+router.get("/get/:id", isAuthenticated, isAuthorized("Admin"), getGazetteDetails);
+
+// 🧠 Fetch Scan Logs
+router.get("/logs", isAuthenticated, isAuthorized("Admin"), getScanLogs);
 
 export default router;
