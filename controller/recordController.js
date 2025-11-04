@@ -356,7 +356,7 @@ export const getAdminDashboardStats = async (req, res) => {
     const approved = await Record.countDocuments({ form60Compliance: "Approved" });
     const rejected = await Record.countDocuments({ form60Compliance: "Rejected" });
 
-    // Weekly stats (last 6 weeks)
+    /* ---------------- Weekly stats (last 6 weeks) ---------------- */
     const weekly = await Record.aggregate([
       {
         $group: {
@@ -386,12 +386,43 @@ export const getAdminDashboardStats = async (req, res) => {
       }))
       .reverse();
 
+    /* ---------------- Monthly stats (last 6 months) ---------------- */
+    const monthly = await Record.aggregate([
+      {
+        $group: {
+          _id: {
+            month: { $month: "$dateReceived" },
+            year: { $year: "$dateReceived" },
+          },
+          total: { $sum: 1 },
+          approved: {
+            $sum: { $cond: [{ $eq: ["$form60Compliance", "Approved"] }, 1, 0] },
+          },
+          rejected: {
+            $sum: { $cond: [{ $eq: ["$form60Compliance", "Rejected"] }, 1, 0] },
+          },
+        },
+      },
+      { $sort: { "_id.year": -1, "_id.month": -1 } },
+      { $limit: 6 },
+    ]);
+
+    const monthlyFormatted = monthly
+      .map((m) => ({
+        month: `${m._id.month}-${m._id.year}`,
+        total: m.total,
+        approved: m.approved,
+        rejected: m.rejected,
+      }))
+      .reverse();
+
     res.status(200).json({
       success: true,
       totalRecords,
       approved,
       rejected,
       weekly: weeklyFormatted,
+      monthly: monthlyFormatted,
     });
   } catch (error) {
     console.error("getAdminDashboardStats error:", error.message);
@@ -402,6 +433,7 @@ export const getAdminDashboardStats = async (req, res) => {
     });
   }
 };
+
 
 
 export const getRecentRecords = async (req, res) => {
