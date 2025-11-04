@@ -4,7 +4,7 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-const MONGO_URI = "";
+const MONGO_URI = "mongodb+srv://principalregistry_db_user:pr.@cluster0.pn94ibf.mongodb.net/PRF60?retryWrites=true&w=majority&appName=Cluster0";
 
 const courts = [
   {
@@ -2044,9 +2044,57 @@ const courts = [
     secondaryEmails: [],
     code: "65806",
     location: "WITU",
-  }
-
-  
+  },
+  {
+    name: "KILIFI LAW COURT",
+    level: "Law Court",
+    magistrate: "HON. JAMES MWANIKI",
+    phone: "",
+    primaryEmail: "kilificourt@court.go.ke",
+    secondaryEmails: ["j.mwaniki@court.go.ke"],
+    code: "",
+    location: "",
+  },
+  {
+    name: "WANG'URU LAW COURT",
+    level: "Law Court",
+    magistrate: "",
+    phone: "",
+    primaryEmail: "wangurucourt@court.go.ke",
+    secondaryEmails: [],
+    code: "",
+    location: "",
+  },
+  {
+    name: "NAIROBI KADHIS COURT",
+    level: "Kadhis Court",
+    magistrate: "",
+    phone: "",
+    primaryEmail: "deputychiefkadhiscourt@court.go.ke",
+    secondaryEmails: [],
+    code: "",
+    location: "",
+  },
+  {
+    name: "HOLA KADHIS COURT",
+    level: "Kadhis Court",
+    magistrate: "",
+    phone: "",
+    primaryEmail: "holacourt@court.go.ke",
+    secondaryEmails: [],
+    code: "",
+    location: "",
+  },
+  {
+    name: "MOTOMO LAW COURT",
+    level: "Law Court",
+    magistrate: "",
+    phone: "",
+    primaryEmail: "motomocourt@court.go.ke",
+    secondaryEmails: [],
+    code: "",
+    location: "",
+  }, 
 
 ];
 

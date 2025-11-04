@@ -14,7 +14,7 @@ const courts = [
 
 const seed = async () => {
   try {
-    await mongoose.connect("");
+    await mongoose.connect("mongodb+srv://kdomondi1:keith.@cluster0.8brzayi.mongodb.net/GAZETTE_SYSTEM?retryWrites=true&w=majority&appName=Cluster0");
     await Court.deleteMany(); // optional, clears old data
     await Court.insertMany(courts);
     console.log("Courts seeded ✅");
