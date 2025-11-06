@@ -9,14 +9,18 @@ import { Parser } from "json2csv";
 /* =========================================================
  * 🧩 HELPER — AUTO-INCREMENT RECORD NUMBERS
  * ========================================================= */
-async function getNextSequence(name) {
+async function getNextSequence(id) {
+  if (!id) throw new Error("Counter id cannot be null or undefined");
+
   const counter = await Counter.findByIdAndUpdate(
-    name,
+    id, // ✅ _id field in your schema
     { $inc: { seq: 1 } },
     { new: true, upsert: true, setDefaultsOnInsert: true }
   );
+
   return counter?.seq ?? 1;
 }
+
 
 /* =========================================================
  * 📝 EMAIL TEMPLATES
