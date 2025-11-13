@@ -133,12 +133,10 @@ export const createRecord = async (req, res) => {
 
     // Minimal validation
     if (!courtStation || !causeNo || !nameOfDeceased || !dateReceived) {
-      return res
-        .status(400)
-        .json({
-          message:
-            "Missing required fields: courtStation, causeNo, nameOfDeceased, dateReceived",
-        });
+      return res.status(400).json({
+        message:
+          "Missing required fields: courtStation, causeNo, nameOfDeceased, dateReceived",
+      });
     }
 
     // Start a session/transaction if available (best-effort)
@@ -347,13 +345,11 @@ export const deleteRecord = async (req, res) => {
       .json({ success: true, message: "Record deleted successfully" });
   } catch (err) {
     console.error("deleteRecord error:", err.message || err);
-    return res
-      .status(500)
-      .json({
-        success: false,
-        message: "Failed to delete record",
-        error: err.message,
-      });
+    return res.status(500).json({
+      success: false,
+      message: "Failed to delete record",
+      error: err.message,
+    });
   }
 };
 
@@ -445,22 +441,18 @@ export const bulkUpdateDateForwarded = async (req, res) => {
       )
     );
 
-    return res
-      .status(200)
-      .json({
-        success: true,
-        message: "Records updated successfully. Admins and courts notified.",
-        modifiedCount: result.modifiedCount,
-      });
+    return res.status(200).json({
+      success: true,
+      message: "Records updated successfully. Admins and courts notified.",
+      modifiedCount: result.modifiedCount,
+    });
   } catch (err) {
     console.error("bulkUpdateDateForwarded error:", err.message || err);
-    return res
-      .status(500)
-      .json({
-        success: false,
-        message: "Failed to update records or send emails",
-        error: err.message,
-      });
+    return res.status(500).json({
+      success: false,
+      message: "Failed to update records or send emails",
+      error: err.message,
+    });
   }
 };
 
@@ -524,18 +516,16 @@ export const getAllRecordsForAdmin = async (req, res) => {
     });
   } catch (err) {
     console.error("getAllRecordsForAdmin error:", err.message || err);
-    return res
-      .status(500)
-      .json({
-        success: false,
-        message: "Failed to fetch records for admin",
-        error: err.message,
-      });
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch records for admin",
+      error: err.message,
+    });
   }
 };
 
 /* =========================================================
- * 📥 DOWNLOAD MONTHLY REPORT (CSV) - optimized
+ * 🖨️ DOWNLOAD / VIEW MONTHLY REPORT (HTML, Admin Only)
  * ========================================================= */
 export const downloadMonthlyReport = async (req, res) => {
   try {
@@ -543,42 +533,77 @@ export const downloadMonthlyReport = async (req, res) => {
     const year = parseInt(req.query.year, 10) || new Date().getFullYear();
 
     const records = await Record.find({
-      $expr: {
-        $and: [
-          { $eq: [{ $month: "$dateReceived" }, month] },
-          { $eq: [{ $year: "$dateReceived" }, year] },
-        ],
-      },
-    })
-      .populate("courtStation", "name")
-      .lean();
+      $expr: { $and: [{ $eq: [{ $month: "$dateReceived" }, month] }, { $eq: [{ $year: "$dateReceived" }, year] }] }
+    }).populate("courtStation", "name").lean();
 
-    if (!records.length)
-      return res.status(404).json({ message: "No records for this month" });
+    if (!records.length) return res.status(404).send("<h3>No records found for this month.</h3>");
 
-    const fields = [
-      "no",
-      "causeNo",
-      "nameOfDeceased",
-      "courtStation.name",
-      "form60Compliance",
-      "dateReceived",
-      "dateForwardedToGP",
-    ];
-    const parser = new Parser({ fields });
-    const csv = parser.parse(records);
+    const monthName = new Date(year, month - 1).toLocaleString("default", { month: "long" });
+    const tableRows = records.map((r, i) => `
+      <tr>
+        <td>${i + 1}</td>
+        <td>${r.causeNo}</td>
+        <td>${r.nameOfDeceased}</td>
+        <td>${r.courtStation?.name || "—"}</td>
+        <td>${r.form60Compliance}</td>
+        <td>${r.dateReceived ? new Date(r.dateReceived).toLocaleDateString() : "—"}</td>
+        <td>${r.dateForwardedToGP ? new Date(r.dateForwardedToGP).toLocaleDateString() : "—"}</td>
+      </tr>
+    `).join("");
 
-    res.header("Content-Type", "text/csv");
-    res.attachment(`Monthly_Report_${month}-${year}.csv`);
-    return res.send(csv);
+    const html = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="UTF-8" />
+          <title>Monthly Report - ${monthName} ${year}</title>
+          <style>
+            body { font-family: 'Arial', sans-serif; margin:40px; background:#fff; color:#000; }
+            .header { text-align:center; border-bottom:2px solid #000; padding-bottom:10px; margin-bottom:20px; }
+            .header img { width:80px; height:80px; margin-bottom:10px; }
+            .header h1 { font-size:22px; margin:5px 0; color:#003366; }
+            .header h2 { font-size:18px; margin:5px 0; }
+            .header h3 { font-size:16px; margin:5px 0; color:#444; }
+            table { width:100%; border-collapse:collapse; margin-top:20px; }
+            th, td { border:1px solid #999; padding:8px; font-size:14px; text-align:left; }
+            th { background-color:#003366; color:#fff; }
+            tr:nth-child(even) { background-color:#f2f2f2; }
+            .print-btn { margin-bottom:20px; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <img src="https://judiciary.go.ke/wp-content/uploads/2023/05/logo1-Copy-2.png" alt="Logo"/>
+            <h1>Principal Registry of High Court</h1>
+            <h2>Monthly Report - ${monthName} ${year}</h2>
+            <h3>Total Records: ${records.length}</h3>
+          </div>
+          <button class="print-btn" onclick="window.print()">Print / Save PDF</button>
+          <table>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Cause No</th>
+                <th>Name of Deceased</th>
+                <th>Court</th>
+                <th>Status</th>
+                <th>Date Received</th>
+                <th>Date Forwarded to GP</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${tableRows}
+            </tbody>
+          </table>
+        </body>
+      </html>
+    `;
+
+    res.setHeader("Content-Type", "text/html");
+    res.send(html);
   } catch (err) {
     console.error("downloadMonthlyReport error:", err.message || err);
-    return res
-      .status(500)
-      .json({
-        message: "Failed to generate monthly report",
-        error: err.message,
-      });
+    res.status(500).send("<h3>Failed to generate report. Please try again later.</h3>");
   }
 };
 
@@ -665,13 +690,11 @@ export const getAdminDashboardStats = async (req, res) => {
     });
   } catch (err) {
     console.error("getAdminDashboardStats error:", err.message || err);
-    return res
-      .status(500)
-      .json({
-        success: false,
-        message: "Failed to fetch admin dashboard stats",
-        error: err.message,
-      });
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch admin dashboard stats",
+      error: err.message,
+    });
   }
 };
 
@@ -689,13 +712,11 @@ export const getRecentRecords = async (req, res) => {
     return res.status(200).json({ success: true, recentRecords });
   } catch (err) {
     console.error("getRecentRecords error:", err.message || err);
-    return res
-      .status(500)
-      .json({
-        success: false,
-        message: "Failed to fetch recent records",
-        error: err.message,
-      });
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch recent records",
+      error: err.message,
+    });
   }
 };
 
@@ -718,13 +739,11 @@ export const getRecordById = async (req, res) => {
     return res.status(200).json({ success: true, record });
   } catch (err) {
     console.error("getRecordById error:", err.message || err);
-    return res
-      .status(500)
-      .json({
-        success: false,
-        message: "Failed to fetch record",
-        error: err.message,
-      });
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch record",
+      error: err.message,
+    });
   }
 };
 
@@ -762,13 +781,11 @@ export const getRecords = async (req, res) => {
     });
   } catch (err) {
     console.error("Get records error:", err.message || err);
-    return res
-      .status(500)
-      .json({
-        success: false,
-        message: "Failed to fetch records",
-        error: err.message,
-      });
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch records",
+      error: err.message,
+    });
   }
 };
 
@@ -779,12 +796,10 @@ export const verifyRecords = async (req, res) => {
   try {
     const { ids } = req.body;
     if (!ids || !Array.isArray(ids) || !ids.length)
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "No record IDs provided for verification",
-        });
+      return res.status(400).json({
+        success: false,
+        message: "No record IDs provided for verification",
+      });
 
     const validIds = ids.filter((id) => mongoose.Types.ObjectId.isValid(id));
     if (!validIds.length)
@@ -797,22 +812,18 @@ export const verifyRecords = async (req, res) => {
       { $set: { statusAtGP: "Published", datePublished: new Date() } }
     );
 
-    return res
-      .status(200)
-      .json({
-        success: true,
-        message: "Records verified successfully",
-        matchedCount: result.matchedCount,
-        modifiedCount: result.modifiedCount,
-      });
+    return res.status(200).json({
+      success: true,
+      message: "Records verified successfully",
+      matchedCount: result.matchedCount,
+      modifiedCount: result.modifiedCount,
+    });
   } catch (err) {
     console.error("verifyRecords error:", err.message || err);
-    return res
-      .status(500)
-      .json({
-        success: false,
-        message: "Failed to verify records",
-        error: err.message,
-      });
+    return res.status(500).json({
+      success: false,
+      message: "Failed to verify records",
+      error: err.message,
+    });
   }
 };
